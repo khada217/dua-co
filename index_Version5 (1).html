@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Qur'anic Duas</title>
+
+  <!-- Onsen UI -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/onsenui/css/onsenui.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/onsenui/css/onsen-css-components.min.css">
+
+  <!-- Bootstrap (optional; used for spacing) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap/dist/css/bootstrap.min.css">
+
+  <style>
+    /* Placeholder gradient background */
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      /* subtle vertical gradient for placeholder background */
+      background: linear-gradient(180deg, #f0f7ff 0%, #eef6f1 50%, #faf9ff 100%);
+    }
+
+    /* Optional card-like container effect on ons-page content */
+    ons-page .content-wrapper {
+      padding: 0.75rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .arabic {
+      font-size: 1.15rem;
+      direction: rtl;
+      text-align: right;
+      font-weight: 600;
+      color: #1f2d3d;
+      margin-bottom: .5rem;
+      line-height: 1.6;
+    }
+
+    .list-item__meta {
+      font-size: .95rem;
+      color: #444;
+      margin-bottom: .25rem;
+    }
+
+    .no-results {
+      padding: 1rem;
+      text-align: center;
+      color: #666;
+    }
+
+    /* highlight */
+    mark {
+      background: #fff176;
+      padding: 0 .12rem;
+      border-radius: 2px;
+    }
+
+    /* small responsiveness */
+    @media (max-width: 576px) {
+      .arabic { font-size: 1.05rem; }
+    }
+  </style>
+</head>
+<body>
+  <ons-page>
+    <ons-toolbar>
+      <div class="center">📿 Qur'anic Duas</div>
+    </ons-toolbar>
+
+    <div class="content-wrapper">
+      <ons-search-input id="searchInput" placeholder="Search Duas..." class="w-100 mb-2"></ons-search-input>
+
+      <div id="loading" style="padding:.5rem">Loading duas…</div>
+      <ons-list id="duaList" aria-live="polite"></ons-list>
+
+      <div id="noResults" class="no-results" hidden>No results found.</div>
+    </div>
+  </ons-page>
+
+  <!-- jQuery -->
+  <script src="https://cdn.jsdelivr.net/npm/jquery/dist/jquery.min.js"></script>
+
+  <!-- Onsen UI -->
+  <script src="https://cdn.jsdelivr.net/npm/onsenui/js/onsenui.min.js"></script>
+
+  <script>
+    (function () {
+      // Debounce helper
+      function debounce(fn, wait) {
+        let t = null;
+        return function(...args) {
+          clearTimeout(t);
+          t = setTimeout(() => fn.apply(this, args), wait);
+        };
+      }
+
+      // Escape HTML to prevent XSS
+      function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      // Highlight matched query in escaped text (case-insensitive)
+      function highlightEscaped(text, query) {
+        if (!query) return escapeHtml(text);
+        const escQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex chars
+        const re = new RegExp('(' + escQuery + ')', 'ig');
+
+        const original = String(text || '');
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+        while ((match = re.exec(original)) !== null) {
+          const idx = match.index;
+          if (idx > lastIndex) {
+            parts.push(escapeHtml(original.slice(lastIndex, idx)));
+          }
+          parts.push('<mark>' + escapeHtml(match[0]) + '</mark>');
+          lastIndex = idx + match[0].length;
+          if (re.lastIndex === match.index) re.lastIndex++;
+        }
+        if (lastIndex < original.length) parts.push(escapeHtml(original.slice(lastIndex)));
+        if (parts.length === 0) return escapeHtml(original);
+        return parts.join('');
+      }
+
+      const $duaList = $('#duaList');
+      const $loading = $('#loading');
+      const $noResults = $('#noResults');
+      let duas = [];
+
+      function loadDuas() {
+        fetch('data/duas.json', { cache: 'no-store' })
+          .then(res => {
+            if (!res.ok) throw new Error('Network response was not ok: ' + res.status);
+            return res.json();
+          })
+          .then(data => {
+            duas = Array.isArray(data) ? data : [];
+            renderDuas(duas);
+          })
+          .catch(err => {
+            console.error('Failed to load duas.json:', err);
+            $loading.text('Failed to load duas (see console).');
+          })
+          .finally(() => {
+            $loading.prop('hidden', true);
+          });
+      }
+
+      // jQuery-based render with highlighting
+      function renderDuas(list, query) {
+        $duaList.empty();
+
+        if (!list || list.length === 0) {
+          $noResults.prop('hidden', false);
+          return;
+        } else {
+          $noResults.prop('hidden', true);
+        }
+
+        list.forEach(function(dua) {
+          const titleHtml = highlightEscaped(dua.title || '', query || '');
+          const arabicHtml = highlightEscaped(dua.arabic || '', query || '');
+          const translitHtml = highlightEscaped(dua.transliteration || '', query || '');
+          const translationHtml = highlightEscaped(dua.translation || '', query || '');
+
+          const $item = $(`
+            <ons-list-item expandable class="list-item">
+              <div class="center">${titleHtml}</div>
+              <div class="expandable-content list-item__expanded">
+                <p class="arabic">${arabicHtml}</p>
+                <p class="list-item__meta"><strong>Transliteration:</strong> ${translitHtml}</p>
+                <p class="list-item__meta"><strong>Translation:</strong> ${translationHtml}</p>
+              </div>
+            </ons-list-item>
+          `);
+
+          $duaList.append($item);
+        });
+
+        // Ensure Onsen compiles new nodes if necessary
+        if (window.ons && typeof ons.compile === 'function') {
+          ons.compile($duaList[0]);
+        }
+      }
+
+      // Setup search: get inner input from ons-search-input and attach debounced handler
+      function setupSearch() {
+        function getInnerInput() {
+          const custom = document.getElementById('searchInput');
+          if (!custom) return null;
+          const inner = custom.querySelector('input');
+          if (inner) return inner;
+          return document.querySelector('ons-search-input input');
+        }
+
+        const inputEl = getInnerInput();
+        if (!inputEl) {
+          console.warn('Could not find inner input for ons-search-input; search may not work.');
+          return;
+        }
+
+        const doSearch = debounce(function () {
+          const q = inputEl.value.trim().toLowerCase();
+          if (!q) {
+            renderDuas(duas, '');
+            return;
+          }
+          const filtered = duas.filter(function(d) {
+            const title = (d.title || '').toLowerCase();
+            const translit = (d.transliteration || '').toLowerCase();
+            const translation = (d.translation || '').toLowerCase();
+            const arabic = (d.arabic || '').toLowerCase();
+            return title.includes(q) || translit.includes(q) || translation.includes(q) || arabic.includes(q);
+          });
+          renderDuas(filtered, q);
+        }, 180);
+
+        inputEl.addEventListener('input', doSearch);
+      }
+
+      $(document).ready(function() {
+        loadDuas();
+        setupSearch();
+      });
+    })();
+  </script>
+</body>
+</html>
