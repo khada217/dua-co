@@ -137,7 +137,7 @@
       let duas = [];
 
       function loadDuas() {
-        fetch('data/duas.json', { cache: 'no-store' })
+        fetch('duas.json', { cache: 'no-store' })
           .then(res => {
             if (!res.ok) throw new Error('Network response was not ok: ' + res.status);
             return res.json();
