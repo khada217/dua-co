@@ -13,17 +13,25 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap/dist/css/bootstrap.min.css">
 
   <style>
-    /* Placeholder gradient background */
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      /* subtle vertical gradient for placeholder background */
-      background: linear-gradient(180deg, #f0f7ff 0%, #eef6f1 50%, #faf9ff 100%);
+    :root{
+      --bg-top: #f0f7ff;
+      --bg-mid: #eef6f1;
+      --bg-bot: #faf9ff;
+      --card-bg: #ffffff;
+      --muted: #666;
+      --accent: #1f2d3d;
+      --highlight: #fff176;
     }
 
-    /* Optional card-like container effect on ons-page content */
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 50%, var(--bg-bot) 100%);
+      color: var(--accent);
+    }
+
     ons-page .content-wrapper {
-      padding: 0.75rem;
+      padding: 1rem;
       max-width: 900px;
       margin: 0 auto;
     }
@@ -33,7 +41,7 @@
       direction: rtl;
       text-align: right;
       font-weight: 600;
-      color: #1f2d3d;
+      color: var(--accent);
       margin-bottom: .5rem;
       line-height: 1.6;
     }
@@ -47,19 +55,36 @@
     .no-results {
       padding: 1rem;
       text-align: center;
-      color: #666;
+      color: var(--muted);
     }
 
-    /* highlight */
     mark {
-      background: #fff176;
+      background: var(--highlight);
       padding: 0 .12rem;
       border-radius: 2px;
     }
 
-    /* small responsiveness */
+    .search-row {
+      display:flex;
+      gap:.5rem;
+      align-items:center;
+    }
+
+    .focus-outline:focus{
+      outline: 3px solid rgba(33,150,243,0.4);
+      outline-offset: 2px;
+    }
+
+    .result-count{
+      font-size:.9rem;
+      color:var(--muted);
+      margin-top:.25rem;
+    }
+
+    /* responsive tweaks */
     @media (max-width: 576px) {
       .arabic { font-size: 1.05rem; }
+      .search-row { flex-direction:column; align-items:stretch; }
     }
   </style>
 </head>
@@ -70,7 +95,12 @@
     </ons-toolbar>
 
     <div class="content-wrapper">
-      <ons-search-input id="searchInput" placeholder="Search Duas..." class="w-100 mb-2"></ons-search-input>
+      <label for="searchInput" class="visually-hidden">Search Duas</label>
+      <div class="search-row">
+        <input id="searchInput" type="search" placeholder="Search Duas..." aria-label="Search Duas" class="form-control focus-outline">
+        <button id="clearBtn" class="btn btn-outline-secondary" aria-label="Clear search">Clear</button>
+      </div>
+      <div id="resultCount" class="result-count" aria-live="polite"></div>
 
       <div id="loading" style="padding:.5rem">Loading duas…</div>
       <ons-list id="duaList" aria-live="polite"></ons-list>
@@ -79,159 +109,170 @@
     </div>
   </ons-page>
 
-  <!-- jQuery -->
-  <script src="https://cdn.jsdelivr.net/npm/jquery/dist/jquery.min.js"></script>
-
-  <!-- Onsen UI -->
+  <!-- Onsen UI JS (kept) -->
   <script src="https://cdn.jsdelivr.net/npm/onsenui/js/onsenui.min.js"></script>
 
   <script>
-    (function () {
-      // Debounce helper
-      function debounce(fn, wait) {
-        let t = null;
-        return function(...args) {
-          clearTimeout(t);
-          t = setTimeout(() => fn.apply(this, args), wait);
-        };
-      }
+  (function () {
+    // Debounce helper
+    function debounce(fn, wait) {
+      let t = null;
+      return function(...args) {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => fn.apply(this, args), wait);
+      };
+    }
 
-      // Escape HTML to prevent XSS
-      function escapeHtml(str) {
-        if (str == null) return '';
-        return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      }
+    // Escape HTML to prevent XSS
+    function escapeHtml(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
 
-      // Highlight matched query in escaped text (case-insensitive)
-      function highlightEscaped(text, query) {
-        if (!query) return escapeHtml(text);
-        const escQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex chars
-        const re = new RegExp('(' + escQuery + ')', 'ig');
+    // Highlight matched query in escaped text (case-insensitive)
+    function highlightEscaped(text, query) {
+      if (!query) return escapeHtml(text);
+      const escQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex chars
+      const re = new RegExp('(' + escQuery + ')', 'ig');
 
-        const original = String(text || '');
-        const parts = [];
-        let lastIndex = 0;
-        let match;
-        while ((match = re.exec(original)) !== null) {
-          const idx = match.index;
-          if (idx > lastIndex) {
-            parts.push(escapeHtml(original.slice(lastIndex, idx)));
-          }
-          parts.push('<mark>' + escapeHtml(match[0]) + '</mark>');
-          lastIndex = idx + match[0].length;
-          if (re.lastIndex === match.index) re.lastIndex++;
+      const original = String(text || '');
+      let lastIndex = 0;
+      let match;
+      const parts = [];
+      while ((match = re.exec(original)) !== null) {
+        const idx = match.index;
+        if (idx > lastIndex) {
+          parts.push(escapeHtml(original.slice(lastIndex, idx)));
         }
-        if (lastIndex < original.length) parts.push(escapeHtml(original.slice(lastIndex)));
-        if (parts.length === 0) return escapeHtml(original);
-        return parts.join('');
+        parts.push('<mark>' + escapeHtml(match[0]) + '</mark>');
+        lastIndex = idx + match[0].length;
+        if (re.lastIndex === match.index) re.lastIndex++;
       }
+      if (lastIndex < original.length) parts.push(escapeHtml(original.slice(lastIndex)));
+      if (parts.length === 0) return escapeHtml(original);
+      return parts.join('');
+    }
 
-      const $duaList = $('#duaList');
-      const $loading = $('#loading');
-      const $noResults = $('#noResults');
-      let duas = [];
+    const duaListEl = document.getElementById('duaList');
+    const loadingEl = document.getElementById('loading');
+    const noResultsEl = document.getElementById('noResults');
+    const resultCountEl = document.getElementById('resultCount');
 
-      function loadDuas() {
-        fetch('duas.json', { cache: 'no-store' })
-          .then(res => {
-            if (!res.ok) throw new Error('Network response was not ok: ' + res.status);
-            return res.json();
-          })
-          .then(data => {
-            duas = Array.isArray(data) ? data : [];
-            renderDuas(duas);
-          })
-          .catch(err => {
-            console.error('Failed to load duas.json:', err);
-            $loading.text('Failed to load duas (see console).');
-          })
-          .finally(() => {
-            $loading.prop('hidden', true);
-          });
+    let duas = [];
+
+    function updateResultCount(count, total) {
+      if (count === total) {
+        resultCountEl.textContent = total + ' duas';
+      } else {
+        resultCountEl.textContent = count + ' of ' + total + ' duas shown';
       }
+    }
 
-      // jQuery-based render with highlighting
-      function renderDuas(list, query) {
-        $duaList.empty();
-
-        if (!list || list.length === 0) {
-          $noResults.prop('hidden', false);
-          return;
-        } else {
-          $noResults.prop('hidden', true);
-        }
-
-        list.forEach(function(dua) {
-          const titleHtml = highlightEscaped(dua.title || '', query || '');
-          const arabicHtml = highlightEscaped(dua.arabic || '', query || '');
-          const translitHtml = highlightEscaped(dua.transliteration || '', query || '');
-          const translationHtml = highlightEscaped(dua.translation || '', query || '');
-
-          const $item = $(`
-            <ons-list-item expandable class="list-item">
-              <div class="center">${titleHtml}</div>
-              <div class="expandable-content list-item__expanded">
-                <p class="arabic">${arabicHtml}</p>
-                <p class="list-item__meta"><strong>Transliteration:</strong> ${translitHtml}</p>
-                <p class="list-item__meta"><strong>Translation:</strong> ${translationHtml}</p>
-              </div>
-            </ons-list-item>
-          `);
-
-          $duaList.append($item);
+    function loadDuas() {
+      fetch('duas.json', { cache: 'no-store' })
+        .then(res => {
+          if (!res.ok) throw new Error('Network response was not ok: ' + res.status);
+          return res.json();
+        })
+        .then(data => {
+          duas = Array.isArray(data) ? data : [];
+          renderDuas(duas);
+        })
+        .catch(err => {
+          console.error('Failed to load duas.json:', err);
+          loadingEl.textContent = 'Failed to load duas (see console).';
+        })
+        .finally(() => {
+          loadingEl.hidden = true;
         });
+    }
 
-        // Ensure Onsen compiles new nodes if necessary
-        if (window.ons && typeof ons.compile === 'function') {
-          ons.compile($duaList[0]);
-        }
+    function renderDuas(list, query) {
+      query = query || '';
+      duaListEl.innerHTML = '';
+
+      if (!list || list.length === 0) {
+        noResultsEl.hidden = false;
+        updateResultCount(0, duas.length);
+        return;
+      } else {
+        noResultsEl.hidden = true;
       }
 
-      // Setup search: get inner input from ons-search-input and attach debounced handler
-      function setupSearch() {
-        function getInnerInput() {
-          const custom = document.getElementById('searchInput');
-          if (!custom) return null;
-          const inner = custom.querySelector('input');
-          if (inner) return inner;
-          return document.querySelector('ons-search-input input');
-        }
+      list.forEach(function(dua) {
+        const titleHtml = highlightEscaped(dua.title || '', query || '');
+        const arabicHtml = highlightEscaped(dua.arabic || '', query || '');
+        const translitHtml = highlightEscaped(dua.transliteration || '', query || '');
+        const translationHtml = highlightEscaped(dua.translation || '', query || '');
 
-        const inputEl = getInnerInput();
-        if (!inputEl) {
-          console.warn('Could not find inner input for ons-search-input; search may not work.');
+        // Using accessible <details> element for built-in keyboard support
+        const li = document.createElement('ons-list-item');
+        li.className = 'list-item';
+        li.setAttribute('expandable', '');
+
+        const centerDiv = document.createElement('div');
+        centerDiv.className = 'center';
+        centerDiv.innerHTML = titleHtml;
+
+        const expanded = document.createElement('div');
+        expanded.className = 'expandable-content list-item__expanded';
+        expanded.innerHTML = `\n          <p class="arabic">${arabicHtml}</p>\n          <p class="list-item__meta"><strong>Transliteration:</strong> ${translitHtml}</p>\n          <p class="list-item__meta"><strong>Translation:</strong> ${translationHtml}</p>\n        `;
+
+        li.appendChild(centerDiv);
+        li.appendChild(expanded);
+
+        duaListEl.appendChild(li);
+      });
+
+      // Call ons.compile if available so Onsen initializes the new nodes
+      if (window.ons && typeof ons.compile === 'function') {
+        try { ons.compile(duaListEl); } catch(e) { /* ignore */ }
+      }
+
+      updateResultCount(list.length, duas.length);
+    }
+
+    function setupSearch() {
+      const input = document.getElementById('searchInput');
+      const clearBtn = document.getElementById('clearBtn');
+
+      function doFilter() {
+        const q = input.value.trim().toLowerCase();
+        if (!q) {
+          renderDuas(duas, '');
           return;
         }
-
-        const doSearch = debounce(function () {
-          const q = inputEl.value.trim().toLowerCase();
-          if (!q) {
-            renderDuas(duas, '');
-            return;
-          }
-          const filtered = duas.filter(function(d) {
-            const title = (d.title || '').toLowerCase();
-            const translit = (d.transliteration || '').toLowerCase();
-            const translation = (d.translation || '').toLowerCase();
-            const arabic = (d.arabic || '').toLowerCase();
-            return title.includes(q) || translit.includes(q) || translation.includes(q) || arabic.includes(q);
-          });
-          renderDuas(filtered, q);
-        }, 180);
-
-        inputEl.addEventListener('input', doSearch);
+        const filtered = duas.filter(function(d) {
+          const title = (d.title || '').toLowerCase();
+          const translit = (d.transliteration || '').toLowerCase();
+          const translation = (d.translation || '').toLowerCase();
+          const arabic = (d.arabic || '').toLowerCase();
+          return title.includes(q) || translit.includes(q) || translation.includes(q) || arabic.includes(q);
+        });
+        renderDuas(filtered, q);
       }
 
-      $(document).ready(function() {
-        loadDuas();
-        setupSearch();
+      const debounced = debounce(doFilter, 180);
+
+      input.addEventListener('input', debounced);
+      clearBtn.addEventListener('click', function() {
+        input.value = '';
+        input.focus();
+        renderDuas(duas, '');
       });
-    })();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      loadDuas();
+      setupSearch();
+    });
+
+  })();
   </script>
 </body>
 </html>
